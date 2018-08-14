@@ -1,4 +1,5 @@
-function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound)
+function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, detectStatsData, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound)
+%{
 %//////////////////////////////////////////////////////////////////////////
 %// Name: detectStats                                                    //       
 %//                                                                      //
@@ -57,7 +58,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, m
 %//   modulated data to detectStats to get statistics about the          //
 %//   modulated data                                                     //
 %//////////////////////////////////////////////////////////////////////////
-
+%}
 
 
 %*************************************************************************
@@ -73,7 +74,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, m
 
 riseEdge = zeros(1,numSymbols-1); 
 
-riseEdge(1)=-1;  
+%riseEdge(1)=-1;  
 %is a flag that ensures that the second rising edge uses to mark where 
 %area (used in finding the pulsePowerMinAverage) stops
 %becomes the next first rising edge in
@@ -109,17 +110,19 @@ riseEdge(1)=-1;
 %//samples. Might be not a round number of samples so round to 
 %//nearest whole number
   
-firstTenMillisecondsOfSamples = round(0.01*sampleRate,0);
+firstTenMilliseconds = round(0.01*sampleRate,0);
 
 %----------------------------------------- 
 %//Name:middleLine
 %//Purpose: middleLine is the point at which to check if there is a rising edge
 %//between two points
 
-initialMiddleMax = max(modedData(1:firstTenMillisecondsOfSamples));
-initialMiddleMin = min(modedData(1:firstTenMillisecondsOfSamples));
+movingMax = max(modedData);
+movingMin = min(modedData);
 
-middleLine = (initialMiddleMax+initialMiddleMin)/2;%+initialMiddleMin
+middleLine = (movingMax+movingMin)/2;%+movingMin
+
+middleLinePlot(1:firstTenMilliseconds) = middleLine;
                                                              
 
 %----------------------------------------- 
@@ -129,25 +132,13 @@ middleLine = (initialMiddleMax+initialMiddleMin)/2;%+initialMiddleMin
  modedDataIndex = 1;    
 
 %----------------------------------------- 
-%//Name:firstRise
-%//Purpose: index of first rising edge in modedData (is high point of 
-%//rising edge). Initialized to -1 so that it can be used as a flag and not
-
-  firstRise = -1;   
-
-%----------------------------------------- 
-%//Name:riseEdgeIndex
-%//Purpose: move through the riseEdge array using this index
-
-riseEdgeIndex = 1;
+%//Name:edgeIndex
+%//Purpose: index for moving through the edge arrays when finding the edge
+%//locations
+  edgeIndex = 1;
 
 %----------------------------------------- 
-%//Name:fallEdgeIndex
-%//Purpose: move through the fallEdge array using this index
-
-fallEdgeIndex = 1;
-
-
+%{
 %*************************************************************************
 %**                             Stage 1                                 **              
 %*************************************************************************
@@ -196,7 +187,7 @@ shortenedModedData = horzcat(0,modedData(firstRise:length(modedData)));
 %beginning in case first rize is the first index
 
 
-shortenedData = shortenedModedData;
+detectStatsData = shortenedModedData;
 %^data returned will be the shortened data
 
 
@@ -425,6 +416,10 @@ end
 
 for distanceBtRisingAndFallingIndex = 1:1:length(fallEdge)-1
         distanceBtRisingAndFalling(distanceBtRisingAndFallingIndex) = (fallEdge(distanceBtRisingAndFallingIndex)-1)-riseEdge(distanceBtRisingAndFallingIndex);
+        if distanceBtRisingAndFalling(distanceBtRisingAndFallingIndex )~=10
+           disp(distanceBtRisingAndFallingIndex);
+           disp(distanceBtRisingAndFalling(distanceBtRisingAndFallingIndex));
+        end
 end
 
 if distanceBtRisingAndFalling(length(distanceBtRisingAndFalling))==0
@@ -501,6 +496,86 @@ end
 % plot(fallEdge(:));
 % hold on; 
 % plot(riseEdge);
+%}
+    
 
+
+%general case for finding edges
+while(modedDataIndex< (length(modedData))-1) %want to go one over to make sure that we are not on a rising edge or falling edge
+    %///////////
+    %//PHASE 1//    
+    %///////////
+    if modedDataIndex< firstTenMilliseconds  %will overlap one with the above
+            if(modedData(modedDataIndex)< middleLine) && (modedData(modedDataIndex+1)> middleLine)
+                riseEdge(edgeIndex) = modedDataIndex+1;
+                if(fallEdge(edgeIndex)~=0) %increment the index
+                    edgeIndex = edgeIndex+1;
+                end
+
+            elseif(modedData(modedDataIndex)>middleLine && modedData(modedDataIndex+1)< middleLine)
+                fallEdge(edgeIndex) = modedDataIndex+1; 
+                if(fallEdge(edgeIndex)~=0) %increment the index
+                    modedDataIndex= modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                end
+            end
+            
+        modedDataIndex= modedDataIndex+1;
+        
+        
+    %///////////
+    %//PHASE 2//    
+    %///////////  
+    elseif modedDataIndex>= firstTenMilliseconds && modedDataIndex< length(modedData)-1
+%         break;
+%         %{ 
+        if(modedData(modedDataIndex)<middleLine && modedData(modedDataIndex+1)> middleLine)%rising edge
+                riseEdge(edgeIndex) = modedDataIndex+1;
+                
+                
+                
+                if(fallEdge(edgeIndex)~=0) %on the leading rising edge
+                    
+                    movingMinTemp = mean(modedData(fallEdge(edgeIndex):riseEdge(edgeIndex)-1));%falling to rising, so moving min 
+                    movingMin = (movingMin*alpha)+(movingMinTemp*(1-alpha));
+                    edgeIndex = edgeIndex+1;
+                    
+                    
+                    
+                else %on lagging rising edge, so calculate moving max
+                    movingMaxTemp = mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex-1)));%falling to rising, so moving min 
+                    movingMax = (movingMax*alpha)+(movingMaxTemp*(1-alpha));
+                    edgeIndex = edgeIndex+1;
+                    
+                end
+               
+
+            elseif(modedData(modedDataIndex)>middleLine && modedData(modedDataIndex+1)< middleLine)
+                fallEdge(edgeIndex) = modedDataIndex+1; 
+                if(fallEdge(edgeIndex)~=0) %increment the index
+                    modedDataIndex= modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                end
+         end
+            
+        modedDataIndex= modedDataIndex+1;
+        %}
+        
+    end
+    %modedDataIndex= modedDataIndex+1;
+end
+%for finding distance between rising and falling. Assumes that we already
+%have the rising and falling edges arrays
+
+
+% for edgeIndex = 1:1:min(length(fallEdge),length(riseEdge)) %both should be the same size, 
+%     %but will use the size of the smaller one if not the same (ends on 
+%     
+%     if riseEdge(edgeIndex) > fallEdge(edgeIndex) %fall edge comes first
+%         distBtRisingandFalling(edgeIndex) = fallEdge(edgeIndex) - riseEdge(edgeIndex);
+%     elseif riseEdge(edgeIndex) < fallEdge(edgeIndex) %rising edge comes first
+%         distBtRisingandFalling(edgeIndex)= riseEdge(edgeIndex) - fallEdge(edgeIndex);
+%     end
+% end
 end
 
