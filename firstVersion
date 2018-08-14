@@ -1,4 +1,6 @@
 function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound)
+%version2
+
 %//////////////////////////////////////////////////////////////////////////
 %// Name: detectStats                                                    //       
 %//                                                                      //
