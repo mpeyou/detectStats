@@ -1,4 +1,5 @@
-function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound)
+function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound, type)
+%{
 %//////////////////////////////////////////////////////////////////////////
 %// Name: detectStats                                                    //       
 %//                                                                      //
@@ -57,7 +58,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, m
 %//   modulated data to detectStats to get statistics about the          //
 %//   modulated data                                                     //
 %//////////////////////////////////////////////////////////////////////////
-
+%}
 
 
 %*************************************************************************
@@ -73,7 +74,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, m
 
 riseEdge = zeros(1,numSymbols-1); 
 
-riseEdge(1)=-1;  
+%riseEdge(1)=-1;  
 %is a flag that ensures that the second rising edge uses to mark where 
 %area (used in finding the pulsePowerMinAverage) stops
 %becomes the next first rising edge in
@@ -109,17 +110,19 @@ riseEdge(1)=-1;
 %//samples. Might be not a round number of samples so round to 
 %//nearest whole number
   
-firstTenMillisecondsOfSamples = round(0.01*sampleRate,0);
+firstTenMilliseconds = round(0.01*sampleRate,0);
 
 %----------------------------------------- 
 %//Name:middleLine
 %//Purpose: middleLine is the point at which to check if there is a rising edge
 %//between two points
 
-initialMiddleMax = max(modedData(1:firstTenMillisecondsOfSamples));
-initialMiddleMin = min(modedData(1:firstTenMillisecondsOfSamples));
+movingMax = max(modedData);
+movingMin = min(modedData);
 
-middleLine = (initialMiddleMax+initialMiddleMin)/2;%+initialMiddleMin
+middleLine = (movingMax+movingMin)/2;%+movingMin
+
+middleLinePlot(1:firstTenMilliseconds) = middleLine;
                                                              
 
 %----------------------------------------- 
@@ -129,378 +132,328 @@ middleLine = (initialMiddleMax+initialMiddleMin)/2;%+initialMiddleMin
  modedDataIndex = 1;    
 
 %----------------------------------------- 
-%//Name:firstRise
-%//Purpose: index of first rising edge in modedData (is high point of 
-%//rising edge). Initialized to -1 so that it can be used as a flag and not
-
-  firstRise = -1;   
-
-%----------------------------------------- 
-%//Name:riseEdgeIndex
-%//Purpose: move through the riseEdge array using this index
-
-riseEdgeIndex = 1;
+%//Name:edgeIndex
+%//Purpose: index for moving through the edge arrays when finding the edge
+%//locations
+  edgeIndex = 1;
 
 %----------------------------------------- 
-%//Name:fallEdgeIndex
-%//Purpose: move through the fallEdge array using this index
+    %first edges
+    while edgeIndex == 1
+    %find the first edge. The following steps will depend on whether the first edge is rising or falling
+    %if there is a falling edge first, then riseEdge(1) will be zero, and
+    %therefore will determine the method used in determining the movingMax and
+    %movingMin. will not increase edgeIndex until there has been a falling
+    %index found
+        if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%rising edge
+            riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+            modedDataIndex = modedDataIndex+1;
+        elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+            fallEdge(edgeIndex) = modedDataIndex+1;    %is recorded on the low point of the edge
+            modedDataIndex = modedDataIndex+1;
+            edgeIndex = edgeIndex+1; 
+        else
+            modedDataIndex = modedDataIndex+1;
+        end
+    end
+    
+    leadOffMarker = firstTenMilliseconds; %serves to help mark the middleLinePlot
+    %determind which kind of edge the array started on
+    if riseEdge(1) ~= 0 %starts on rising edge
+        type = 1;
+    else 
+        type =0;
+    end
+    %-----------------------------------------------
+   
+    while (edgeIndex > 1) && (modedDataIndex<= length(modedData)-1)
+        %//////////////////////////
+        %//Starts on Falling Edge//
+        %//////////////////////////
+                
+                
+        if type == 0 %starts on the falling Edge, so when there is a rising edge, increment the edgeIndex
+            %find the initial values for moving max, min and average. make sure
+            %the average within this time frame stays the same for measurements
+                
+            %/////////////////////////////////////////
+            %//Falling Start: Encounters Rising Edge//
+            %/////////////////////////////////////////
 
-fallEdgeIndex = 1;
+            if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%if is a rising edge
+                riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+                
+                %////////////////////////////
+                %//FS:RE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    movingMinTemp(edgeIndex-1) = mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+                   % edgeIndex = edgeIndex+1;
+                
+                %//////////////////
+                %//FS:RE:At 10 ms//
+                %//////////////////
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+movingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+%                     edgeIndex = edgeIndex+1;
+                    
+                %/////////////////////
+                %//FS:RE:After 10 ms//
+                %/////////////////////
+                else
+                    
+                    movingMin = (alpha*movingMin)+((1-alpha)*mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1)));
+                    modedDataIndex = modedDataIndex+1;
+                    %edgeIndex = edgeIndex+1;
+                    
+                end
+                
+                
+            %//////////////////////////////////////////
+            %//Falling Start: Encounters Falling Edge//
+            %/////////////////////////////////////////
+            elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+                fallEdge(edgeIndex) = modedDataIndex+1; %is recorded on the low point of the edge
+                
+                %////////////////////////////
+                %//FS:FE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    %keep edgeIndex the same because need
+                    %to put in the riseEdge position
+                    movingMaxTemp(edgeIndex-1) = mean(modedData(riseEdge(edgeIndex-1)+1:fallEdge(edgeIndex-1)-1));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                    
+                 
+                %//////////////////
+                %//FS:FE:At 10 ms//
+                %/////////////////    
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+MovingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//FS:FE:After 10 ms//
+                %/////////////////////    
+                else 
+                    
+                    movingMax = (alpha*movingMax)+((1-alpha)*(mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1))));
+                    
+                    %update the middle line because it will have a new
+                    %moving max and min to work with. If need to update as
+                    %soon as new max and min, put this statement at the
+                    %else of FS:RE
+                    
+                    
+                    
+                    %updates middle line after each new moving max and
+                    %moving min
+                    middleLineTemp = ((movingMax+movingMin)/2);%+movingMin;
+                    middleLine = (middleLine*alpha)+((1-alpha)*(middleLineTemp));
+                    middleLinePlot(leadOffMarker:modedDataIndex) = middleLine;
+                    leadOffMarker= modedDataIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                 
+                end
+            
+            %///////////
+            %//No Edge//
+            %///////////    
+            else %keep moving, there is no edge
+                
+                modedDataIndex = modedDataIndex+1;
+                
+            end
+            
+    %/////////////////////////
+    %//Starts on Rising Edge//
+    %/////////////////////////      
+        elseif type == 1 %starts on the rising Edge, so when there is a falling edge, increment the edgeIndex
+            
+            
+            %////////////////////////////////////////
+            %//Rising Start: Encounters Rising Edge//
+            %////////////////////////////////////////
 
-
-%*************************************************************************
-%**                             Stage 1                                 **              
-%*************************************************************************
-%find the average Power over the first 10 ms. Used 10 ms because, assuming
-%that the minimum sample rate of 250Hz, there should be up down up (rising,
-%falling, then rising)edges, and the 2ms just to make the time round. Anyway, use the average
-%power over the first 10ms to identify the midLine and therefore find where
-%the first up down ups are.
-
-%{
-      ______
-     |      |          |
-     |      |          |
-     |      |          |
-   __|      |__________|
-
-%}
-
-%---------------------------------------------------------                           
-%//                 Find First Rising Edge              //                                                               
-%--------------------------------------------------------- 
-
-
-%------------------------------------------
-%//Type: While Loop
-%//Exit Condition: the index moving through the moddedData array stays
-%//within the first 10 milliseconds of data; firstRise ends the loop after
-%//the first rising edge has been found
-%------------------------------------------  
-while modedDataIndex < firstTenMillisecondsOfSamples && firstRise == -1
+            if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%if is a rising edge
+                riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+                
+                
+                %////////////////////////////
+                %//RS:RE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    movingMinTemp(edgeIndex-1) = mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+    
+                
+                %//////////////////
+                %//RS:RE:At 10 ms//
+                %//////////////////
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+MovingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//RS:RE:After 10 ms//
+                %/////////////////////  
+                else
+                    movingMin = (alpha*movingMin)+((1-alpha)*(mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1))));
+                    
+                    %update the middle line because it will have a new
+                    %moving max and min to work with. If need to update as
+                    %soon as new max and min, put this statement at the
+                    %else of FS:RE
+                    
+                    
+                    
+                    %updates middle line after each new moving max and
+                    %moving min
+                    middleLineTemp = ((movingMax+movingMin)/2)+movingMin;
+                    middleLine = (middleLine*alpha)+((1-alpha)*(middleLineTemp));
+                    middleLinePlot(leadOffMarker:modedDataIndex) = middleLine;
+                    leadOffMarker= modedDataIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                end
+            %/////////////////////////////////////////
+            %//Rising Start: Encounters Falling Edge//
+            %/////////////////////////////////////////
+            elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+                fallEdge(edgeIndex) = modedDataIndex+1; %is recorded on the low point of the edge
+                
+                
+                %////////////////////////////
+                %//RS:FE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    %keep edgeIndex the same because need
+                    %to put in the riseEdge position
+                    movingMaxTemp(edgeIndex-1) = mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex= edgeIndex+1;
+                
+                %//////////////////
+                %//RS:FE:At 10 ms//
+                %//////////////////   
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+movingMin)/2)+movingMin;
+                    edgeIndex= edgeIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//RS:FE:After 10 ms//
+                %/////////////////////    
+                else 
+                    
+                    movingMax = (alpha*movingMax)+((1-alpha)*(mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1))));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                    
+                end
+            
+            %///////////
+            %//No Edge//
+            %///////////    
+            else %keep moving, there is no edge
+                
+                modedDataIndex = modedDataIndex+1;    
+            end
+            
+            
+            
+            
+        end
+        
+        
+        
+    end
+    
+    
+    %-----------------------------------------------
+    
+%/////////////
+%//avg Width//
+%/////////////
+if riseEdge(1) == 0 %starts on a falling edge, so needs to skip first index for the rising edge
+  for index = 2:1: length(fallEdge)-1
+      if type == 0 %PWM
+        widthArray(index) = (fallEdge(index)) - riseEdge(index);
+      elseif type == 1 %PPM
+           widthArray(index) = (fallEdge(index)-1) - riseEdge(index);
+      end
+      %do the index before the falling edge because is recorded on the low point
+  end
   
-    if (modedData(modedDataIndex) > middleLine)
-        firstRise = modedDataIndex; %make sure you record the high point of the edge as the rising
-        break;
-    end
-    modedDataIndex = modedDataIndex +1;
-end
-
-
-%-------------------------------------------------------------------                              
-%//shortend the data array to start right before first rising edge//                                                               
-%-------------------------------------------------------------------  
-
-shortenedModedData = horzcat(0,modedData(firstRise:length(modedData))); 
-%NEED TO START ON LOWER EDGE OF RISING EDGE so just add a zero to the
-%beginning in case first rize is the first index
-
-
-shortenedData = shortenedModedData;
-%^data returned will be the shortened data
-
-
-
-%------------------------------------------------------------                                
-%//find inital moving averages and rising and falling edges//                                                               
-%------------------------------------------------------------   
-
-tenMillisecondsShortenedEnd = firstTenMillisecondsOfSamples - firstRise -1; 
-
-%DO ONE BEFORE THE FIRST RISE BECAUSE NEED TO START ON LOWER EDGE OF 
-%RISING EDGE hence the -1
-
-%need to redefine the end of the first ten milliseconds of data because 
-%we cut off part of the beginning of the data
-
-
-%------------------------------------------
-%//Type: For Loop
-%//Exit Condition: goes from the end of the index of the first rising edge
-%//to the end of the first ten milliseconds, which will be in terms of the
-%//shortened data Array, not the modedData array
-%------------------------------------------ 
-
-
-for shortenedModedDataIndex = 1:1:tenMillisecondsShortenedEnd 
+  %check widthArray for errors
+    %{
+      for x = 1:1:length(widthArray)-1
+          if widthArray(x)~=10 && type ==1
+              disp(x);
+          end  
+      end
+    %}  
+  
+  avgWidth = mean(widthArray(2:length(widthArray)-1));
+  stdWidth = std(widthArray);
     
-    %if current index is less than middleLine and next index is greater
-    %than middleLine, then there is a rising edge (@ the higher point)
-    if (shortenedModedData(shortenedModedDataIndex) < middleLine) && (shortenedModedData(shortenedModedDataIndex+1) > middleLine)
-        riseEdge(riseEdgeIndex) = shortenedModedDataIndex+1;
-        %^will recapture the first rising edge position within the new 
-        %shortened array
-        
-        if(riseEdgeIndex>=2)
-            %have to have a falling then rising edge to find the
-            %moving min
-            movingMinAvg(riseEdgeIndex-1) = mean(shortenedModedData(fallEdge(fallEdgeIndex-1):(riseEdge(riseEdgeIndex)-1)));
-        end
-        
-        %increment the index for the riseEdge array
-        riseEdgeIndex = riseEdgeIndex+1;
-        
-        
-    elseif (shortenedModedData(shortenedModedDataIndex) > middleLine) && (shortenedModedData(shortenedModedDataIndex+1) < middleLine) && (riseEdge(1)~=-1)
-        fallEdge(fallEdgeIndex) = shortenedModedDataIndex+1;
-        
-        movingMaxAvg(fallEdgeIndex) = mean(shortenedModedData(riseEdge(fallEdgeIndex):(fallEdge(fallEdgeIndex)-1)));
-        %fallingEdge measured from low point, so take one before that to
-        %get the high point of the edge
-        
-        fallEdgeIndex=fallEdgeIndex+1;
-        
-    end
-end
-
-%take the average of all those values in the intial average arrays to get 
-%one single starting value 
-initialMovingMaxAvg = mean(movingMaxAvg);                                  
-initialMovingMinAvg = mean(movingMinAvg); 
-
-%total average of all the data is the inital middleLine
-middleLine = (max(shortenedModedData)-min(shortenedModedData))/2+ min(shortenedModedData);                                               
-
-%plot that records the changes in middleLine
-middleLinePlot(1:tenMillisecondsShortenedEnd) = middleLine*ones(1,tenMillisecondsShortenedEnd);
-
-
-%*************************************************************************
-%**                             Stage 2                                 **              
-%*************************************************************************
-
-%find the remaining rising and falling edges to calculate statistics
-
-
-%----------------------------------------------------                              
-%//Variable Definitions used in the next while Loop//                                                               
-%---------------------------------------------------- 
-%{
-% R1 = first Rising Edge position within the 3 part sequence of rising-falling-rising edge
-% R2 = second Rising Edge within the sequence of rising-falling-rising edge
-% F1= first Falling Edge within the sequence of rising-falling-rising edge
-% ^ with respect to shortenedModedDataPos
-%
-% s2MDIndex= shortenedModedDataIndex
-%}
-
-pulsePwrAvgMaxLine= initialMovingMaxAvg; %just renaming the initialMovingMaxAvg variable
-pulsePwrAvgMinLine= initialMovingMinAvg; %just renaming the initialMovingMinAvg variable
-
-part = 0;
-%{
-%part 0 indicates the loop is on the first up down up. Otherwise, part 1
-%indicates that the loop is past the first up down up, and will declare the
-%R1 to be the same as the R2 at the end of the conditionaly statement (so
-%as not to skip the second rising edge, and therefore not accurately update
-%the middleLine)
-%} 
-
-
-%the next loop should start on the last edge within the first 10 ms
-if(max(fallEdge)>max(riseEdge)) %last edge in first 10ms was falling
-    shortenedStartIndex = max(fallEdge);
-%     R1 = tenMillisecondsShortenedEnd;
-%     F1 = max(fallEdge);
-elseif (max(fallEdge)<max(riseEdge)) %last edge in first 10ms was rising
-    shortenedStartIndex = max(riseEdge);
-%     R1 = max(riseEdge);
-%     F1 = tenMillisecondsShortenedEnd;
-end
-
-
-%initialized to be the last rising edge from the first 10 ms
-
-
-
-%------------------------------------------
-%//Type: For Loop
-%//Exit Condition: goes from the end of the first ten milliseconds of data
-%//to the end of the data (which is the same end as the original moded data,
-%//but the indexing will differ
-
-%//Details: 
-%//starts on the index of the end of the first 10 ms because that could be
-%//the low index for a rising edge and we cannot discard that. this falls
-%//under part 0 because you have to first find the rising-falling-rising
-%//pattern for part 1 to work correctly
-
-%//Then, when the current index is lower than the middleLine and 
-%//the next index is higher than the middleLine, the higher point is
-%//recorded as the rising edge. increments the rising edge index.
-
-%//Then moves to falling edge part 0, where the same method is applied 
-%//except the falling edge is recorded as the lower point. increments the
-%//falling edge index
-%------------------------------------------
-
-for s2MDIndex = shortenedStartIndex:1:length(shortenedModedData)-1
-    %continue from where you left off at the beginning
-    if(shortenedModedData(s2MDIndex) < middleLine) && (shortenedModedData(s2MDIndex+1) > middleLine) %rising Edge
-
-         if part == 0 %then you're looking at the first rising edge in the sequence
-            
-            R1 = s2MDIndex+1; %set the first rising edge
-            riseEdge(riseEdgeIndex)=R1;
-            riseEdgeIndex = riseEdgeIndex+1;
-            
-        elseif part == 1
-        
-            R2 = s2MDIndex+1; %set the second rising edge
-            riseEdge(riseEdgeIndex)=R2;
-            riseEdgeIndex = riseEdgeIndex+1;
-            tempPulsePwrMinAvg = mean(shortenedModedData(F1:R2-1));
-            pulsePwrAvgMinLine = (pulsePwrAvgMinLine *alpha) + (tempPulsePwrMinAvg*(1-alpha));
-            
-            %calculate and plot the middleLine using the pulsePwrAvgMaxLine
-            %and pulsePwrAvgMinLine lines
-            middleLine = (pulsePwrAvgMaxLine-pulsePwrAvgMinLine)/2 + pulsePwrAvgMinLine;
-            %used to plot the middleLine progression at after the loop
-            middleLinePlot = horzcat(middleLinePlot,middleLine*ones(1,R2-R1));
-            
-            R1=R2; %set the first rising edge to be the old second rising edge
-            part = 1;
-         end
-        
-    elseif(shortenedModedData(s2MDIndex) > middleLine) && (shortenedModedData(s2MDIndex+1) < middleLine) %falling Edge
-         if part == 0%already found the first rising edge in the sequence
-           
-               F1 = s2MDIndex+1;
-               %disp(F1);
-               fallEdge(fallEdgeIndex) = F1;
-               fallEdgeIndex=fallEdgeIndex+1;
-               
-               %find tempPulsePowerMovingMaxAverage (PPMMXA)
-               tempPulsePwrMaxAvg = mean(shortenedModedData(R1:F1-1));
-               pulsePwrAvgMaxLine = (pulsePwrAvgMaxLine*alpha) + (tempPulsePwrMaxAvg*(1-alpha));
-               
-                part=1;
+else
+    for index = 1:1: length(fallEdge)-1
+      if type == 0 %PWM
+        widthArray(index) = (fallEdge(index)) - riseEdge(index);
+      elseif type == 1 %PPM
+           widthArray(index) = (fallEdge(index)-1) - riseEdge(index);
+      end
+      %do the index before the falling edge because is recorded on the low point
+    end 
+    
+    %check widthArray for erros
+    %{
+      for x = 1:1:length(widthArray)-1
+          if widthArray(x)~=10 && type ==1
+              disp(x);
+          end  
+      end
+    %}   
       
-        elseif part == 1
-        
-        F1 = s2MDIndex+1;
-        fallEdge(fallEdgeIndex) = F1;
-        fallEdgeIndex=fallEdgeIndex+1;
-        
-        
-        tempPulsePwrMaxAvg = mean(shortenedModedData(R2:F1-1));
-        pulsePwrAvgMaxLine = (pulsePwrAvgMaxLine*alpha) + (tempPulsePwrMaxAvg*(1-alpha));
-        end
-
-    end
-end
-
-%requirements
-%{
-        -the first average line is going to be the average of the data
-        -take the average of the stuff between the rising edge and the
-         falling edge and call that movingMax
-        -take the average of the stuff between the falling edge and the
-         next rising edge and call that movingMin
-        -the middle line that must be calculated is (moiveMax-movingMin)/2
-        -record a new middleLine every 10 periods (assuming you can
-         determine what a period is)
-        -is a rising edge if currIndex < middleLine &&
-         currIndex+1>MiddleLine
-        -is a falling edge if currIndex > middleLine &&
-         currIndex+1<MiddleLine
-        otherwise, put the between those points into arrays Marked
-        highPointsArray and lowPointsArray
-       -make sure to start on a rising edge but setting riseEdge[1] = -1
-       and until it equals something greater than / not -1, then can't
-       record a falling edge
-%}
-
-%///////////////////////////////////////////////////////////////////////////
-%//Width //
-%//////////
-
-%Find the Distance between the rising and falling edges (pulse Width)
-
-%takes the index of the position of the falling edge in the fallEdge
-%array and subtract the position of the rising edge in the riseEdge array to
-%find the distance between them. record the distance between them at the same index
-%in the distanceBtRisingAndFallingIndex array. Take avg and std of that
-%array
-
-for distanceBtRisingAndFallingIndex = 1:1:length(fallEdge)-1
-        distanceBtRisingAndFalling(distanceBtRisingAndFallingIndex) = (fallEdge(distanceBtRisingAndFallingIndex)-1)-riseEdge(distanceBtRisingAndFallingIndex);
-end
-
-if distanceBtRisingAndFalling(length(distanceBtRisingAndFalling))==0
-   distanceBtRisingAndFalling = distanceBtRisingAndFalling(1: length(distanceBtRisingAndFalling));
-end
+      
+      
+  avgWidth = mean(widthArray);
+  stdWidth = std(widthArray);
+end 
 
 
-avgWidth = mean(distanceBtRisingAndFalling);
-stdWidth = std(distanceBtRisingAndFalling);
+% avgWidth = 0;
+avgDistBtRising = 0;
+stdDistBtRising = 0;
+% stdWidth = 0;
 
-%///////////////////////////////////////////////////////////////////////////
-%//Period//
-%//////////
-
-%Find the Distance between the rising edges = period
-
-for risingEdgeIndex= 1:1:length(riseEdge)-1
-    if riseEdge(risingEdgeIndex+1)-riseEdge(risingEdgeIndex)>=0 
-        riseEdgeDistances(risingEdgeIndex) = riseEdge(risingEdgeIndex+1)-riseEdge(risingEdgeIndex);
-    end
-end
-
-%AVG AND STD PERIOD
-avgDistBtRising = mean(riseEdgeDistances);
-stdDistBtRising = std(riseEdgeDistances);
-
-
-%///////////////////////////////////////////////////////////////////////////
-%//Exact Position where the edge crosses the middleLine//
-%////////////////////////////////////////////////////////
-%{
-if exact == 1
-    %pulse high and pulse low by finding the avg of the top of the signal
-    %and the avg of the low  of the signal
-    
-    %upEnd and downEnd indicate over what period of samples the edge is being
-    %measured. Default is 1
-    upEnd = 1;
-    downEnd =1;
-    
-    %how much to add to the index that is on riseEdge or fallEdge to
-    %make sure it crosses the middleLine (is the real point of intersection
-    riseEdgeAdd=0;
-    fallEdgeAdd=0;
-    
-    %how much to add to riseEdge indexes
-    for x = 0:10^(-decimalRound-1):upEnd
-        upLine = round(pulseAmp*x,decimalRound);
-        if (upLine == avgAmp)
-            riseEdgeAdd=x;
-        end
-    end
-    %how much to add to fallEdge indexes
-    for x = 0:10^(-decimalRound-1):downEnd
-        downLine = round((-pulseAmp*x)+pulseAmp,decimalRound);
-        if (downLine == avgAmp)
-            fallEdgeAdd=x;
-        end
-        
-    end
-    
-    for index = 1:1:length(riseEdge)
-        riseEdgeAccurate(index) = round(riseEdge(index),decimalRound) + riseEdgeAdd;
-        fallEdgeAccurate(index) = round(fallEdge(index),decimalRound) + fallEdgeAdd;
-        accuratedistanceBtFallRise(index) = fallEdgeAccurate(index)-riseEdgeAccurate(index);
-    end
-    
-    riseEdge = riseEdgeAccurate;
-    fallEdge = fallEdgeAccurate;
-    
-end
-%}
-% figure('Name', 'Falling vs Rising');
-% plot(fallEdge(:));
-% hold on; 
-% plot(riseEdge);
 
 end
 
