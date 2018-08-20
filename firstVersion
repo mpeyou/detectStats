@@ -1,306 +1,479 @@
-% Name:MainPPSD.m
-% *****
-% Inputs: inputData
-% *****
-% Outputs: Plots the output of the modulated input data
-% *****
-% Description
-% serves as a driver to pulseModulator (and in extention detectStats)
-% requires the inputData be an array of single points
-% the points will be rescaled to be within a specific range (generally -1 to
-%
-%/////////////////////////////////////////////////////////////////////////
-%//Variables//
-%/////////////
-clear;
-
-
-sampleRate = 40000;                             %rate at which the signal is sampled
-%in hertz
-numSymbols = 100000;                              %desired number of symbols for the
-%input data
-
-samplesPerSymbol = 100;                         %how many samples should be in each symbol?
-
-pulseAmp = 10;                                  %amplitude that the high portions of the signal reach
-
-%snr = 1;                                        %signal to noise ratio, used when adding noise to the signal
-
-modType = 2;                                    %modulation type: PWM = 1  PPM=2
-
-firstInputValue = 0;                         %if doing only two different inputs, this is the first value
-secondInputValue = 0.5;                        %if doing only two different inputs, this is the first value
-
-inverted = 0;                                   %inverted = 1 -> the pulse is inverted
-%inverted = 0 -> the pulse
-%is not inverted
-
-topInputDataRange = 1;                          %top of range to rescale
-bottomInputDataRange = -1;                      %the inputs into
-
-inputsPerTooth = 7;                 %number of inputs per tooth for the sawtooth input
-
-whichRound=1;
-exact=0;
-decimalRound = 0;                                   %how many places to round decimal numbers to. should match the power of 10 of the samples per symbol
-oneSample = 1/sampleRate;
-
-xAxisStep = 0.1;                                    %step from 0 to highestStep for noise multiplier
-highestStep = 5;                                    %top of range for noise multiplier
-
-dcOffset = 0;                                       %a dc offset for the data
-
-
-%/////////////////////////////////////////////////////////////////////////
-%//Inputs//
-%//////////
-
-%TWO INPUTS ONLY
+function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound, type)
 %{
-topInputDataRange = 1;                          %top of range to rescale
-                                                %the inputs into
-
-bottomInputDataRange = -1;                      %bottom of range to rescale
-                                                %the inputs into
-
-                                                %number of inputs
-inputData = rescale(rand(numSymbols,1),-1,1);   %inputData in this case is
-                                                %a numSymbols inputs by 1
-                                                %rescaled to be between bottom
-                                                %InputDataRange and topInputDataRange
-                                               
-for inputIndex = 1:1:numSymbols  %do two inputs only that are uniformly distributed
-    if inputData(inputIndex) >=0  %done this way because we already have this code so why reinvent the wheel
-        inputData(inputIndex) = firstInputValue;
-    elseif inputData(inputIndex) < 0
-        inputData(inputIndex) = secondInputValue;
-    end
-end
-%}
-%--------------------------
-%RANDOM INPUTS
-%
-topInputDataRange = 1;                          %top of range to rescale
-%the inputs into
-
-bottomInputDataRange = -1;                      %bottom of range to rescale
-%the inputs into
-
-%number of inputs
-inputData = rescale(rand(numSymbols,1),-1,1);   %inputData in this case is
-%a numSymbols inputs by 1
-%rescaled to be between bottom
-%InputDataRange and topInputDataRange
-%}
-%--------------------------
-%POSITIVE AND NEGATIVE ONES
-%{
-inputData = [-1,1,-1,1,-1,1,-1,1,-1,1,-1,1];
-%}
-%--------------------------
-%INCREMENTED INPUT DATA
-%{
-  inputData =[-1,-0.75,-0.5,-0.25,0,0.25,0.5,0.75,1,-1,-0.75,-0.5,-0.25,0,0.25,0.5,0.75,1];
-%}
-%--------------------------
-%SINE INPUT
-%{
- x= 1:0.1:100;                                 %inputData in sine form
- inputData = sin(x);                           %needs to have an x range
-                                               %will be in terms of samples
-%}
-%--------------------------
-%Sawtooth Input
-%{
-
-incrementPerPoint = (topInputDataRange - bottomInputDataRange)/inputsPerTooth; %makes the increment in input points uniform
-inputData = ones(1,numSymbols);
-numTeeth = numSymbols/inputsPerTooth;%number of teeth made for the sawtooth input
- for currTooth = 0:inputsPerTooth:numSymbols
-     for pointIncrement = 1:1:inputsPerTooth %place within a tooth that is being filled
-     inputData(currTooth+pointIncrement) = -1+(pointIncrement*incrementPerPoint); %add whichever consecutive number up to inputs per teeth to build the teeth
-     end
- end
-     
-                                                %needs to have an x range
-                                               %will be in terms of samples
-%}
-%--------------------------
-%PLOT THE INPUT DATA
-%{
- figure(1);
- plot(inputData);
- xlabel('Sample Number');
- ylabel('Amplitude');
- title('Input Data');
-%}
-
-%/////////////////////////////////////////////////////////////////////////
-%//Send InputData to be Modulated //
-%///////////////////////////////////
-
-%-------------------
-%pulseModulator|||||
-%-----------------------------------------------------
-%{
-% Name: pulseModulator
-% *****
-% Call: [outputArray] = pulseModulator(data,samplesPerSymbol,pulseAmp,sampleRate,snr,modType)
-% *****
-% Type: function
-% *****
-% Inputs:
-%       inputData = the input data points (in an array)
-%       samplesPerSymbol = how many samples should be in each symbol?
-%       pulseAmp= amplitude that the high portions of the signal reach
-%       sampleRate = rate at which the data is sampled, same as above
-%       snr= signal to noise ratio, used when adding noise to the signal
-%       modType => PWM = 1  PPM=2
-% *****
-% Outputs: modulated data in the form of an array
-% *****
-% Description
-% modulates the data in the form you choose (PWM,PPM) then sends the
-% modulated data to detectStats to get statistics about the modulated data
-%}
-
-%/////////////////////////////////////////////////////////////////////////
-%//Call other Functions //
-%////////////////////////
-
-[modedDataPWM] = pulseModulator(inputData,samplesPerSymbol,pulseAmp,sampleRate,1,1,inverted,decimalRound,0,dcOffset);
-%{
-
-    figure(5);
-    plot(modedDataPWM);
-    title('modedDataPWM BEFORE DetectStats');
-    ylim([-10,20]);
-    xlim([0,500]);
+%//////////////////////////////////////////////////////////////////////////
+%// Name: detectStats                                                    //       
+%//                                                                      //
+%// Call: [avgDistBtRising, stdDistBtRising,avgWidth, stdWidth, avgPos,  //
+%//       stdPos, riseEdge, fallEdge,distanceBtFallRise] = detectStats   //
+%//       (modedData,numSymbols,samplesPerPeriod,exact,decimalRound,     //
+%//       sampleRate)                                                    //         
+%//                                                                      //
+%// Type: function                                                       //
+%//                                                                      //
+%// Inputs:                                                              //  
+%//       inputData = the input data points (in an array)                //
+%//                                                                      //
+%//       samplesPerSymbol = how many samples should be in each symbol?  //
+%//                                                                      //
+%//       pulseAmp= amplitude that the high portions of the signal reach //
+%//                                                                      //
+%//       sampleRate = rate at which the data is sampled, same as above  //
+%//                                                                      //
+%//       snr=signal to noise ratio,used when adding noise to the signal //
+%//                                                                      //
+%//       modType => PWM = 1  PPM=2                                      //
+%//                                                                      // 
+%//                                                                      //
+%//                                                                      //
+%// Outputs:                                                             //
+%//                                                                      //         
+%//     avgWidth            = average distance between rising and        //
+%//                           falling edges                              //
+%//                                                                      //
+%//     stdWidth            = standard deviation of distance between     //
+%//                           rising and falling edges                   //
+%//                                                                      //
+%//     avgDistBtRising     = average distance between rising edges      //
+%//                                                                      //
+%//     stdDistBtRising     = standard deviation of distance between     //
+%//                           rising edges                               //
+%//     riseEdge            = array of positions where the rising edges  //
+%//                           are located within the shortened           //
+%//                           modedData(which is then called             //
+%//                           shortenedModedData, and now starts         //
+%//                           on the first rising edge)                  //
+%//                                                                      //
+%//     fallEdge            = array of positions where the falling edges //
+%//                           are located within the shortened modedData //
+%//                           (which is then called shortenedModedData,  //
+%//                           and now starts on the first rising edge)   //   
+%//                                                                      //
+%//    distanceBtFallRise  = array of distances between rising and       //
+%//                          falling edges                               //
+%//                                                                      //  
+%//                                                                      //
+%//                                                                      //
+%// Description:                                                         //
+%//   modulates the data in the form you choose (PWM,PPM) then sends the //
+%//   modulated data to detectStats to get statistics about the          //
+%//   modulated data                                                     //
+%//////////////////////////////////////////////////////////////////////////
 %}
 
 
-[avgWidthPWM, stdWidthPWM, avgDistBtRisingPWM, stdDistBtRisingPWM, middleLinePlotPWM,riseEdgePWM, fallEdgePWM] = detectStats(modedDataPWM,numSymbols,samplesPerSymbol,exact,sampleRate,decimalRound,0);
+%*************************************************************************
+%**                      Variable Declaration                           **              
+%*************************************************************************
 
-%/////////////////////////////////////////////////////////////////////////
-%//Plot the modedData PWM  //
-%////////////////////////
-%
-    xAxisTime = 0:oneSample:(length(modedDataPWM)-1)*oneSample;
-    figure('Name','modedDataPWM Plot');
-    %plot(xAxisTime,modedDataPWM);
-    plot(modedDataPWM, 'k');
-    hold on;
-    plot(middleLinePlotPWM,'r');
-    title('Modulated Signal PWM');
-    xlabel('Samples');
-    ylim([-15,15]);
-    
+%-----------------------------------------
+%//Name:riseEdge
+%//Purpose: holds the positions of the rising edges within the shortened 
+%//array. Is the size of the number of symbols minus 1 because the
+%//shortened data array will cut off the first symbol because it has no
+%//rising edge
 
-%}
+riseEdge = zeros(1,numSymbols-1); 
 
-%/////////////////////////////////////////////////////////////////////////
-%//Detect Statistics for PPM Signal//
-%////////////////////////////////////
+%riseEdge(1)=-1;  
+%is a flag that ensures that the second rising edge uses to mark where 
+%area (used in finding the pulsePowerMinAverage) stops
+%becomes the next first rising edge in
+%that pattern
 
-if modType == 2
-    
-    x= 1;
-    for snr = 0%:xAxisStep:highestStep%99 values
-        
-    [modedDataPPM] = pulseModulator(inputData,samplesPerSymbol,pulseAmp,sampleRate,snr,modType,inverted,decimalRound,fallEdgePWM,dcOffset);
-
-    %
-    figure(4);
-    plot(modedDataPPM);
-    title('modedDataPPM BEFORE DetectStats');
-    ylim([-10,20]);
-    %}
-    
-    [avgWidthPPM, stdWidthPPM,avgDistBtRisingPPM, stdDistBtRisingPPM, middleLinePlotPPM, riseEdgePPM,fallEdgePPM]=detectStats(modedDataPPM,numSymbols,samplesPerSymbol,0,sampleRate,decimalRound,1);
-    %[avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, middleLinePlot,fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound)
-    outputArray = modedDataPPM; %set the PPM array to be the one returned to the MainPPSD, assuming modType = 2
-    
-    avgWidthArray(x) = avgWidthPPM;
-    stdWidthArray(x) = stdWidthPPM;
-    avgDistBtRisingArray(x) = avgDistBtRisingPPM;
-    stdDistBtRisingArray(x) = stdDistBtRisingPPM;
-    
-    x=x+1;
+%-----------------------------------------
+%//Name:fallEdge
+%//Purpose: holds the positions of the rising edges within the shortened 
+%//array. Is the size of the number of symbols minus 1 because the
+%//shortened data array will cut off the first symbol because it has no
+%//rising edge, and therefore theres is one less falling edge
+  
+ fallEdge = zeros(1,numSymbols-1);  
  
+%----------------------------------------- 
+%//Name:distanceBtRisingAndFalling
+%//Purpose: holds the distance between consecutive rising and falling edge
+%//positions
+
+   distanceBtRisingAndFalling= zeros(1,numSymbols-1);    
+
+%----------------------------------------- 
+%//Name:alpha
+%//Purpose: controls the rate of change of the middleLine
+   
+   alpha = 0.95;                                       
 
 
-%/////////////////////////////////////////////////////////////////////////
-%//Plot the modedData PPM  //
-%////////////////////////
-%
-    if snr == 0 || snr == 5
-        %xAxisTime = 0:oneSample:(length(modedDataPWM)-1)*oneSample;
-        figure('Name','modedDataPPM Plot');
-        %plot(xAxisTime,modedDataPWM);
-        plot( modedDataPPM, 'k');
-        hold on;
-        plot(middleLinePlotPPM,'r'); %xAxisTime(1:length(middleLinePlotPPM))
-        title('Modulated Signal PPM');
-        xlabel('Time(seconds)');
-        ylim([-pulseAmp,pulseAmp+10]);
+%----------------------------------------- 
+%//Name:firstTenMillisecondsOfSamples
+%//Purpose: is the first ten milliseconds by multiplying the 
+%//sample rate(samples per second) by 10/1000 to get 10ms of 
+%//samples. Might be not a round number of samples so round to 
+%//nearest whole number
+  
+firstTenMilliseconds = round(0.01*sampleRate,0);
+
+%----------------------------------------- 
+%//Name:middleLine
+%//Purpose: middleLine is the point at which to check if there is a rising edge
+%//between two points
+
+movingMax = max(modedData);
+movingMin = min(modedData);
+
+middleLine = (movingMax+movingMin)/2;%+movingMin
+
+middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                                                             
+
+%----------------------------------------- 
+%//Name:modedDataIndex 
+%//Purpose: indexes through the modedData array
+
+ modedDataIndex = 1;    
+
+%----------------------------------------- 
+%//Name:edgeIndex
+%//Purpose: index for moving through the edge arrays when finding the edge
+%//locations
+  edgeIndex = 1;
+
+%----------------------------------------- 
+    %first edges
+    while edgeIndex == 1
+    %find the first edge. The following steps will depend on whether the first edge is rising or falling
+    %if there is a falling edge first, then riseEdge(1) will be zero, and
+    %therefore will determine the method used in determining the movingMax and
+    %movingMin. will not increase edgeIndex until there has been a falling
+    %index found
+        if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%rising edge
+            riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+            modedDataIndex = modedDataIndex+1;
+        elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+            fallEdge(edgeIndex) = modedDataIndex+1;    %is recorded on the low point of the edge
+            modedDataIndex = modedDataIndex+1;
+            edgeIndex = edgeIndex+1; 
+        else
+            modedDataIndex = modedDataIndex+1;
+        end
     end
-   %} 
-   end
-end
-%}
+    
+    leadOffMarker = firstTenMilliseconds; %serves to help mark the middleLinePlot
+    %determind which kind of edge the array started on
+    if riseEdge(1) ~= 0 %starts on rising edge
+        type = 1;
+    else 
+        type =0;
+    end
+    %-----------------------------------------------
+   
+    while (edgeIndex > 1) && (modedDataIndex<= length(modedData)-1)
+        %//////////////////////////
+        %//Starts on Falling Edge//
+        %//////////////////////////
+                
+                
+        if type == 0 %starts on the falling Edge, so when there is a rising edge, increment the edgeIndex
+            %find the initial values for moving max, min and average. make sure
+            %the average within this time frame stays the same for measurements
+                
+            %/////////////////////////////////////////
+            %//Falling Start: Encounters Rising Edge//
+            %/////////////////////////////////////////
 
-%/////////////////////////////////////////////////////////////////////////
-%//Print Out Statistics//
-%///////////////////////////////////
+            if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%if is a rising edge
+                riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+                
+                %////////////////////////////
+                %//FS:RE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    movingMinTemp(edgeIndex-1) = mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+                   % edgeIndex = edgeIndex+1;
+                
+                %//////////////////
+                %//FS:RE:At 10 ms//
+                %//////////////////
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+movingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+%                     edgeIndex = edgeIndex+1;
+                    
+                %/////////////////////
+                %//FS:RE:After 10 ms//
+                %/////////////////////
+                else
+                    
+                    movingMin = (alpha*movingMin)+((1-alpha)*mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1)));
+                    modedDataIndex = modedDataIndex+1;
+                    %edgeIndex = edgeIndex+1;
+                    
+                end
+                
+                
+            %//////////////////////////////////////////
+            %//Falling Start: Encounters Falling Edge//
+            %/////////////////////////////////////////
+            elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+                fallEdge(edgeIndex) = modedDataIndex+1; %is recorded on the low point of the edge
+                
+                %////////////////////////////
+                %//FS:FE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    %keep edgeIndex the same because need
+                    %to put in the riseEdge position
+                    movingMaxTemp(edgeIndex-1) = mean(modedData(riseEdge(edgeIndex-1)+1:fallEdge(edgeIndex-1)-1));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                    
+                 
+                %//////////////////
+                %//FS:FE:At 10 ms//
+                %/////////////////    
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+MovingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//FS:FE:After 10 ms//
+                %/////////////////////    
+                else 
+                    
+                    movingMax = (alpha*movingMax)+((1-alpha)*(mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1))));
+                    
+                    %update the middle line because it will have a new
+                    %moving max and min to work with. If need to update as
+                    %soon as new max and min, put this statement at the
+                    %else of FS:RE
+                    
+                    
+                    
+                    %updates middle line after each new moving max and
+                    %moving min
+                    middleLineTemp = ((movingMax+movingMin)/2);%+movingMin;
+                    middleLine = (middleLine*alpha)+((1-alpha)*(middleLineTemp));
+                    middleLinePlot(leadOffMarker:modedDataIndex) = middleLine;
+                    leadOffMarker= modedDataIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                 
+                end
+            
+            %///////////
+            %//No Edge//
+            %///////////    
+            else %keep moving, there is no edge
+                
+                modedDataIndex = modedDataIndex+1;
+                
+            end
+            
+    %/////////////////////////
+    %//Starts on Rising Edge//
+    %/////////////////////////      
+        elseif type == 1 %starts on the rising Edge, so when there is a falling edge, increment the edgeIndex
+            
+            
+            %////////////////////////////////////////
+            %//Rising Start: Encounters Rising Edge//
+            %////////////////////////////////////////
 
-if modType == 1
-    modulationType = {'PWM'};
-    avgerageWidth = avgWidthPWM;
-    standardDeviationWidth = stdWidthPWM;
-    avgerageDistBtRising = avgDistBtRisingPWM;
-    standardDeviationDistBtRising = stdDistBtRisingPWM;
-    T = table(avgerageWidth,standardDeviationWidth,avgerageDistBtRising,standardDeviationDistBtRising,'RowNames',modulationType)
-
-elseif modType ==2
+            if (modedData(modedDataIndex) < middleLine) && (modedData(modedDataIndex+1) > middleLine)%if is a rising edge
+                riseEdge(edgeIndex) = modedDataIndex+1; %is recorded on the high point of the edge
+                
+                
+                %////////////////////////////
+                %//RS:RE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    movingMinTemp(edgeIndex-1) = mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+    
+                
+                %//////////////////
+                %//RS:RE:At 10 ms//
+                %//////////////////
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+MovingMin)/2);%+movingMin;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//RS:RE:After 10 ms//
+                %/////////////////////  
+                else
+                    movingMin = (alpha*movingMin)+((1-alpha)*(mean(modedData(fallEdge(edgeIndex-1):riseEdge(edgeIndex)-1))));
+                    
+                    %update the middle line because it will have a new
+                    %moving max and min to work with. If need to update as
+                    %soon as new max and min, put this statement at the
+                    %else of FS:RE
+                    
+                    
+                    
+                    %updates middle line after each new moving max and
+                    %moving min
+                    middleLineTemp = ((movingMax+movingMin)/2)+movingMin;
+                    middleLine = (middleLine*alpha)+((1-alpha)*(middleLineTemp));
+                    middleLinePlot(leadOffMarker:modedDataIndex) = middleLine;
+                    leadOffMarker= modedDataIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                end
+            %/////////////////////////////////////////
+            %//Rising Start: Encounters Falling Edge//
+            %/////////////////////////////////////////
+            elseif (modedData(modedDataIndex) > middleLine) && (modedData(modedDataIndex+1) < middleLine)%falling edge
+                fallEdge(edgeIndex) = modedDataIndex+1; %is recorded on the low point of the edge
+                
+                
+                %////////////////////////////
+                %//RS:FE:Before first 10 ms//
+                %////////////////////////////
+                if (modedDataIndex < firstTenMilliseconds) %before first 10 ms
+                    %keep edgeIndex the same because need
+                    %to put in the riseEdge position
+                    movingMaxTemp(edgeIndex-1) = mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex= edgeIndex+1;
+                
+                %//////////////////
+                %//RS:FE:At 10 ms//
+                %//////////////////   
+                elseif (modedDataIndex == firstTenMilliseconds) %at end of first 10ms
+                    %calculate initial stats
+                    middleLinePlot(1:firstTenMilliseconds) = middleLine;
+                    
+                    movingMin = mean(movingMinTemp);
+                    movingMax = mean(movingMaxTemp);
+                    middleLine = ((movingMax+movingMin)/2)+movingMin;
+                    edgeIndex= edgeIndex+1;
+                    modedDataIndex = modedDataIndex+1;
+                    
+                %/////////////////////
+                %//RS:FE:After 10 ms//
+                %/////////////////////    
+                else 
+                    
+                    movingMax = (alpha*movingMax)+((1-alpha)*(mean(modedData(riseEdge(edgeIndex):fallEdge(edgeIndex)-1))));
+                    modedDataIndex = modedDataIndex+1;
+                    edgeIndex = edgeIndex+1;
+                    
+                end
+            
+            %///////////
+            %//No Edge//
+            %///////////    
+            else %keep moving, there is no edge
+                
+                modedDataIndex = modedDataIndex+1;    
+            end
+            
+            
+            
+            
+        end
+        
+        
+        
+    end
+    
+    
+    %-----------------------------------------------
+    
+%/////////////
+%//avg Width//
+%/////////////
+if riseEdge(1) == 0 %starts on a falling edge, so needs to skip first index for the rising edge
+  for index = 2:1: length(fallEdge)-1
+      if type == 0 %PWM
+        widthArray(index) = (fallEdge(index)) - riseEdge(index);
+      elseif type == 1 %PPM
+           widthArray(index) = (fallEdge(index)-1) - riseEdge(index);
+      end
+      %do the index before the falling edge because is recorded on the low point
+  end
+  
+  %check widthArray for errors
     %{
-    xAxis = 0:xAxisStep:highestStep;
-    figure('Name','Noise Amp vs.stdWidth');
-    plot(xAxis,stdWidthArray, 'x');
-    title('Noise Amp vs.stdWidth');
-    xlabel('Noise Multiplier');
-    ylabel('stdWidth');
+      for x = 1:1:length(widthArray)-1
+          if widthArray(x)~=10 && type ==1
+              disp(x);
+          end  
+      end
+    %}  
+  
+  avgWidth = mean(widthArray(2:length(widthArray)-1));
+  stdWidth = std(widthArray);
     
-    figure('Name','Noise Amp vs. stdDistBtRising');
-    plot(xAxis,stdDistBtRisingArray, 'x');
-    title('Noise Amp vs. stdDistBtRising');
-    xlabel('Noise Multiplier');
-    ylabel('stdDistBtRising');
+else
+    for index = 1:1: length(fallEdge)-1
+      if type == 0 %PWM
+        widthArray(index) = (fallEdge(index)) - riseEdge(index);
+      elseif type == 1 %PPM
+           widthArray(index) = (fallEdge(index)-1) - riseEdge(index);
+      end
+      %do the index before the falling edge because is recorded on the low point
+    end 
     
-    figure('Name','Noise Amp vs.avgWidth');
-    plot(xAxis,stdWidthArray, 'x');
-    title('Noise Amp vs.avgWidth');
-    xlabel('Noise Multiplier');
-    ylabel('avgWidth');
+    %check widthArray for erros
+    %{
+      for x = 1:1:length(widthArray)-1
+          if widthArray(x)~=10 && type ==1
+              disp(x);
+          end  
+      end
+    %}   
+      
+      
+      
+  avgWidth = mean(widthArray);
+  stdWidth = std(widthArray);
+end 
+
+
+%/////////////////////////////////
+%//Distance Between Rising Edges//
+%/////////////////////////////////
+
+if riseEdge(1) == 0 %starts on a falling edge, so needs to skip first index for the rising edge
+  for index = 2:1: length(riseEdge)-1
+
+        distBtRisingArray(index) = (riseEdge(index+1)) - riseEdge(index);
+
+  end
+  
+  avgDistBtRising= mean(distBtRisingArray(2:length(distBtRisingArray)-1));
+  stdDistBtRising = std(distBtRisingArray);
     
-    figure('Name','Noise Amp vs.avgDistBtRising');
-    plot(xAxis,stdWidthArray, 'x');
-    title('Noise Amp vs.avgDistBtRising');
-    xlabel('Noise Multiplier');
-    ylabel('avgDistBtRising');
-    %}
-    
-    
-    
-    
-    
-    modulationType = {'PWM';'PPM'};
-    avgerageWidth = [avgWidthPWM;avgWidthPPM];
-    standardDeviationWidth = [stdWidthPWM;stdWidthPPM];
-    avgerageDistBtRising = [avgDistBtRisingPWM;avgDistBtRisingPPM];
-    standardDeviationDistBtRising = [stdDistBtRisingPWM;stdDistBtRisingPPM];
-    T = table(avgerageWidth,standardDeviationWidth,avgerageDistBtRising,standardDeviationDistBtRising,'RowNames',modulationType)
+else
+    for index = 1:1: length(riseEdge)-1
+     
+        distBtRisingArray(index) = (riseEdge(index+1)) - riseEdge(index);
+      
+      
+    end 
+      
+  avgDistBtRising = mean(distBtRisingArray);
+  stdDistBtRising = std(distBtRisingArray);
+end 
+
 end
-
-
-
 
