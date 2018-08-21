@@ -1,5 +1,4 @@
 function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound, type)
-%{
 %//////////////////////////////////////////////////////////////////////////
 %// Name: detectStats                                                    //       
 %//                                                                      //
@@ -330,7 +329,7 @@ middleLinePlot(1:firstTenMilliseconds) = middleLine;
                     
                     %updates middle line after each new moving max and
                     %moving min
-                    middleLineTemp = ((movingMax+movingMin)/2)+movingMin;
+                    middleLineTemp = ((movingMax+movingMin)/2);%+movingMin;
                     middleLine = (middleLine*alpha)+((1-alpha)*(middleLineTemp));
                     middleLinePlot(leadOffMarker:modedDataIndex) = middleLine;
                     leadOffMarker= modedDataIndex+1;
