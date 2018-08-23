@@ -1,4 +1,4 @@
-function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,samplesPerPeriod,exact,sampleRate,decimalRound, type)
+function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,riseEdge, fallEdge] = detectStats(modedData,numSymbols,exact,sampleRate,decimalRound, type)
 %//////////////////////////////////////////////////////////////////////////
 %// Name: detectStats                                                    //       
 %//                                                                      //
@@ -11,8 +11,6 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,r
 %//                                                                      //
 %// Inputs:                                                              //  
 %//       inputData = the input data points (in an array)                //
-%//                                                                      //
-%//       samplesPerSymbol = how many samples should be in each symbol?  //
 %//                                                                      //
 %//       pulseAmp= amplitude that the high portions of the signal reach //
 %//                                                                      //
@@ -71,7 +69,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, middleLinePlot,r
 %//shortened data array will cut off the first symbol because it has no
 %//rising edge
 
-riseEdge = zeros(1,numSymbols-1); 
+riseEdge(1) = 0; 
 
 %riseEdge(1)=-1;  
 %is a flag that ensures that the second rising edge uses to mark where 
@@ -86,7 +84,7 @@ riseEdge = zeros(1,numSymbols-1);
 %//shortened data array will cut off the first symbol because it has no
 %//rising edge, and therefore theres is one less falling edge
   
- fallEdge = zeros(1,numSymbols-1);  
+ %fallEdge = zeros(1,numSymbols-1);  
  
 %----------------------------------------- 
 %//Name:distanceBtRisingAndFalling
@@ -473,6 +471,7 @@ else
   avgDistBtRising = mean(distBtRisingArray);
   stdDistBtRising = std(distBtRisingArray);
 end 
-
+% figure(20);
+% plot(widthArray);
 end
 
