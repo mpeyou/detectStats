@@ -32,7 +32,7 @@ function [avgWidth, stdWidth, avgDistBtRising, stdDistBtRising, shortenedData, m
 %//     stdWidth            = standard deviation of distance between     //
 %//                           rising and falling edges                   //
 %//                                                                      //
-%//     avgDistBtRising     = average distance between rising edges      //
+%//     avgDistBtRising     = average distance between rising edges //     //
 %//                                                                      //
 %//     stdDistBtRising     = standard deviation of distance between     //
 %//                           rising edges                               //
