@@ -1,0 +1,334 @@
+% Name:MainPPSD.m
+% *****
+% Inputs: inputData
+% *****
+% Outputs: Plots the output of the modulated input data
+% *****
+% Description
+% serves as a driver to pulseModulator (and in extention detectStats)
+% requires the inputData be an array of single points
+% the points will be rescaled to be within a specific range (generally -1 to
+%
+%/////////////////////////////////////////////////////////////////////////
+%//Variables//
+%/////////////
+clear;
+%--------------------------
+%idq Input
+%
+    [IDQSignal, IDQSignalInfo] = idqToBin('phaseMod_sample1.idq');
+%}
+
+%//////////////////////////////////////////////
+%{
+sampleRate = IDQSignalInfo.fs;                 
+
+secondsOfData = 6; %number of seconds of data you want to look at
+IDQSignal = abs(IDQSignal(1:(sampleRate*secondsOfData))); 
+IDQSignal = movsum(IDQSignal,5);
+figure(18);
+plot(IDQSignal);
+numSamples = 0:length(IDQSignal)-1;            % Sampling Frequency (Hz)
+timeXAxis = numSamples/sampleRate;         % Time Vector (seconds)
+numSymbols = length(IDQSignal);                 %desired number of symbols for the
+%}
+%//COMMENT OUT IF USING DATA CREATED BY YOU////
+%//////////////////////////////////////////////
+
+sampleRate = 40000;                             %rate at which the signal is sampled
+numSymbols = 10000; 
+
+samplesPerSymbol = 100;                         %how many samples should be in each symbol?
+
+pulseAmp = 10;                                  %amplitude that the high portions of the signal reach
+
+%snr = 1;                                        %signal to noise ratio, used when adding noise to the signal
+
+firstInputValue = 0;                           %if doing only two different inputs, this is the first value
+secondInputValue = 0.5;                        %if doing only two different inputs, this is the first value
+
+inverted = 0;                                   %inverted = 1 -> the pulse is inverted
+                                                %inverted = 0 -> the pulse is not inverted
+
+topInputDataRange = 1;                          %top of range to rescale
+bottomInputDataRange = -1;                      %the inputs into
+
+inputsPerTooth = 7;                            %number of inputs per tooth for the sawtooth input
+
+decimalRound = 0;                              %how many places to round decimal numbers to. should match the power of 10 of the samples per symbol
+
+oneSample = 1/sampleRate;                       %one Sample value in time
+
+xAxisStep = 0.1;                                    %step from 0 to highestStep for noise multiplier
+highestStep = 5;                                    %top of range for noise multiplier
+
+dcOffset = -3;                                       %a dc offset for the datadcOffsetFlag = 0;                                     %flag so that the dc offset on a PWM signal doesn't screw up the middleLine for PPM
+
+
+%/////////////////////////////////////////////////////////////////////////
+%//Create your own Inputs//
+%/////////////////////////
+%{
+%TWO INPUTS ONLY
+%{
+topInputDataRange = 1;                          %top of range to rescale
+                                                %the inputs into
+
+bottomInputDataRange = -1;                      %bottom of range to rescale
+                                                %the inputs into
+
+                                                %number of inputs
+inputData = rescale(rand(numSymbols,1),-1,1);   %inputData in this case is
+                                                %a numSymbols inputs by 1
+                                                %rescaled to be between bottom
+                                                %InputDataRange and topInputDataRange
+                                               
+for inputIndex = 1:1:numSymbols  %do two inputs only that are uniformly distributed
+    if inputData(inputIndex) >=0  %done this way because we already have this code so why reinvent the wheel
+        inputData(inputIndex) = firstInputValue;
+    elseif inputData(inputIndex) < 0
+        inputData(inputIndex) = secondInputValue;
+    end
+end
+%}
+%--------------------------
+%RANDOM INPUTS
+%
+topInputDataRange = 1;                          %top of range to rescale
+%the inputs into
+
+bottomInputDataRange = -1;                      %bottom of range to rescale
+%the inputs into
+
+%number of inputs
+inputData = rescale(rand(numSymbols,1),-1,1);   %inputData in this case is
+%a numSymbols inputs by 1
+%rescaled to be between bottom
+%InputDataRange and topInputDataRange
+%}
+%--------------------------
+%POSITIVE AND NEGATIVE ONES
+%{
+inputData = [-1,1,-1,1,-1,1,-1,1,-1,1,-1,1];
+%}
+%--------------------------
+%INCREMENTED INPUT DATA
+%{
+  inputData =[-1,-0.75,-0.5,-0.25,0,0.25,0.5,0.75,1,-1,-0.75,-0.5,-0.25,0,0.25,0.5,0.75,1];
+%}
+%--------------------------
+%SINE INPUT
+%{
+ x= 1:0.1:100;                                 %inputData in sine form
+ inputData = sin(x);                           %needs to have an x range
+                                               %will be in terms of samples
+%}
+%--------------------------
+%Sawtooth Input
+%{
+
+incrementPerPoint = (topInputDataRange - bottomInputDataRange)/inputsPerTooth; %makes the increment in input points uniform
+inputData = ones(1,numSymbols);
+numTeeth = numSymbols/inputsPerTooth;%number of teeth made for the sawtooth input
+ for currTooth = 0:inputsPerTooth:numSymbols
+     for pointIncrement = 1:1:inputsPerTooth %place within a tooth that is being filled
+     inputData(currTooth+pointIncrement) = -1+(pointIncrement*incrementPerPoint); %add whichever consecutive number up to inputs per teeth to build the teeth
+     end
+ end
+     
+                                                %needs to have an x range
+                                               %will be in terms of samples
+%}
+%--------------------------
+%PLOT THE INPUT DATA
+%{
+ figure(1);
+ plot(inputData);
+ xlabel('Sample Number');
+ ylabel('Amplitude');
+ title('Input Data');
+%}
+%}
+
+
+
+%/////////////////////////////////////////////////////////////////////////
+%//Send InputData to be Modulated (using your own created signal)//
+%//////////////////////////////////////////////////////////////////
+%Note: any data created by you will automatically be modulated into both
+%PWM and PPM signals
+%{
+%----------------------------------------------------
+%pulseModulator call information
+%{
+% Name: pulseModulator
+% *****
+% Call: [outputArray] = pulseModulator(data,samplesPerSymbol,pulseAmp,sampleRate,snr,modType)
+% *****
+% Type: function
+% *****
+% Inputs:
+%       inputData = the input data points (in an array)
+%       samplesPerSymbol = how many samples should be in each symbol?
+%       pulseAmp= amplitude that the high portions of the signal reach
+%       sampleRate = rate at which the data is sampled, same as above
+%       snr= signal to noise ratio, used when adding noise to the signal
+%       modType => PWM = 1  PPM=2
+% *****
+% Outputs: modulated data in the form of an array
+% *****
+% Description
+% modulates the data in the form you choose (PWM,PPM) then sends the
+% modulated data to detectStats to get statistics about the modulated data
+%}
+
+%/////////////////////////////////////////////////////////////////////////
+%//PWM Signal//
+%////////////////////////////////////
+%----------------------------------------------------
+%Modulate Data into PWM
+%                                   data,samplesPerSymbol,pulseAmp,sampleRate,snr,modType,inverted,decimalRound,fallEdgePWM,dcOffSet
+  [modedDataPWM] = pulseModulator(inputData,samplesPerSymbol,pulseAmp,1,inverted,decimalRound,0,dcOffset);
+%-----------------------------------------------------
+%uncomment below to see the PWM plot before getting the PWM stats
+%{
+
+    figure(5);
+    plot(modedDataPWM);
+    title('modedDataPWM BEFORE DetectStats');
+    ylim([-10,20]);
+    xlim([0,500]);
+%}
+%-----------------------------------------------------
+%call detectStats for PWM Signal
+[avgWidthPWM, stdWidthPWM, avgDistBtRisingPWM, stdDistBtRisingPWM, middleLinePlotPWM,riseEdgePWM, fallEdgePWM] = detectStats(modedDataPWM,sampleRate);
+%-----------------------------------------------------
+%uncomment below to see the PWM plot after getting the PWM stats
+%{
+    xAxisTime = 0:oneSample:(length(modedDataPWM)-1)*oneSample;
+    figure('Name','modedDataPWM Plot');
+    %plot(xAxisTime,modedDataPWM);
+    plot(modedDataPWM, 'k');
+    hold on;
+    plot(middleLinePlotPWM,'r');
+    title('Modulated Signal PWM');
+    xlabel('Samples');
+    ylim([-15,15]);
+%}
+%-----------------------------------------------------
+
+
+
+%/////////////////////////////////////////////////////////////////////////
+%//PPM Signal//
+%////////////////////////////////////
+%Modulate Data into PPM    
+%                                   data,samplesPerSymbol,pulseAmp,modType,inverted,decimalRound,fallEdgePWM,dcOffSet
+  [modedDataPPM] = pulseModulator(modedDataPWM,samplesPerSymbol,pulseAmp,2,inverted,decimalRound,fallEdgePWM,dcOffset);
+%-----------------------------------------------------
+%uncomment below to plot the modedData PPM  before detectStats PPM
+    %{
+    figure(4);
+    plot(modedDataPPM);
+    title('modedDataPPM BEFORE DetectStats');
+    ylim([-10,20]);
+    %}
+%-----------------------------------------------------
+%DetectStats for PPM  
+    [avgWidthPPM, stdWidthPPM,avgDistBtRisingPPM, stdDistBtRisingPPM, middleLinePlotPPM, riseEdgePPM,fallEdgePPM]=detectStats(modedDataPPM,sampleRate);
+%----------------------------------------------------- 
+%uncomment below to plot the modedData PPM after detectStats PPM
+%{
+        figure('Name','modedDataPPM Plot');
+        plot( modedDataPPM, 'k');
+        hold on;
+        plot(middleLinePlotPPM,'r'); %xAxisTime(1:length(middleLinePlotPPM))
+        title('Modulated Signal PPM');
+        xlabel('Time(seconds)');
+        ylim([-pulseAmp,pulseAmp+10]);
+%}
+%}
+
+
+
+%/////////////////////////////////////////////////////////////////////////
+%//detectStats for SAMPLE DATA (real signals)//
+%//////////////////////////////////////////////
+%Note: uncommenting below assumes that the data being used is already modulated
+%and only needs the stats detected
+%{
+
+%                                   data,samplesPerSymbol,pulseAmp,modType,inverted,decimalRound,fallEdgePWM,dcOffSet
+   
+[avgWidthIDQ, stdWidthIDQ, avgDistBtRisingIDQ, stdDistBtRisingIDQ, middleLinePlotIDQ,riseEdgeIDQ, fallEdgeIDQ] = detectStats(IDQSignal,sampleRate);
+
+figure('Name', 'IDQSignal 1 in Time');
+plot(timeXAxis,IDQSignal);
+hold on;
+plot(timeXAxis(1:length(middleLinePlotIDQ)),middleLinePlotIDQ, 'linewidth',3);
+title('IDQSignal 1 in Time');
+xlabel('Time(seconds)');
+ylabel('Amplitude');
+legend('IDQSignal','middleLine');
+%}
+
+
+%/////////////////////////////////////////////////////////////////////////
+%//Print Out Statistics//
+%///////////////////////////////////
+
+%UNCOMMENT BELOW if only want data for either PWM OR PPM, not both
+%{
+    if modType == 1
+        modulationType = {'PWM'};
+        avgerageWidth = avgWidthPWM;
+        standardDeviationWidth = stdWidthPWM;
+        avgerageDistBtRising = avgDistBtRisingPWM;
+        standardDeviationDistBtRising = stdDistBtRisingPWM;
+        T = table(avgerageWidth,standardDeviationWidth,avgerageDistBtRising,standardDeviationDistBtRising,'RowNames',modulationType)
+%
+    elseif modType ==2
+    %
+    xAxis = 0:xAxisStep:highestStep;
+    figure('Name','Noise Amp vs.stdWidth');
+    plot(xAxis,stdWidthArray, 'x');
+    title('Noise Amp vs.stdWidth');
+    xlabel('Noise Multiplier');
+    ylabel('stdWidth');
+    
+    figure('Name','Noise Amp vs. stdDistBtRising');
+    plot(xAxis,stdDistBtRisingArray, 'x');
+    title('Noise Amp vs. stdDistBtRising');
+    xlabel('Noise Multiplier');
+    ylabel('stdDistBtRising');
+    
+    figure('Name','Noise Amp vs.avgWidth');
+    plot(xAxis,stdWidthArray, 'x');
+    title('Noise Amp vs.avgWidth');
+    xlabel('Noise Multiplier');
+    ylabel('avgWidth');
+    
+    figure('Name','Noise Amp vs.avgDistBtRising');
+    plot(xAxis,stdWidthArray, 'x');
+    title('Noise Amp vs.avgDistBtRising');
+    xlabel('Noise Multiplier');
+    ylabel('avgDistBtRising');
+    %}
+
+%UNCOMMENT BELOW IF USING IDQ SIGNAL DATA
+%{
+    row1Name = {'IDQ Signal'};
+    T = table(avgWidthIDQ, stdWidthIDQ, avgDistBtRisingIDQ, stdDistBtRisingIDQ,'RowNames',row1Name)
+%}   
+   
+    
+    
+    
+%     modulationType = {'PWM';'PPM'};
+%     avgerageWidth = [avgWidthPWM;avgWidthPPM];
+%     standardDeviationWidth = [stdWidthPWM;stdWidthPPM];
+%     avgerageDistBtRising = [avgDistBtRisingPWM;avgDistBtRisingPPM];
+%     standardDeviationDistBtRising = [stdDistBtRisingPWM;stdDistBtRisingPPM];
+%     T = table(avgerageWidth,standardDeviationWidth,avgerageDistBtRising,standardDeviationDistBtRising,'RowNames',modulationType)
+
+
